@@ -1,9 +1,11 @@
 openai
 networkx
-sentence-transformers
+#sentence-transformers
 faiss-cpu
 fastapi
 uvicorn
 pydantic
 protobuf==3.20.*
 transformers==4.36.2
+sentence-transformers==2.2.2
+torch==1.13.1
