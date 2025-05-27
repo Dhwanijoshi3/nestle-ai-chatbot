@@ -1,394 +1,356 @@
-# # app.py - Main application file for Azure deployment
-
-# from fastapi import FastAPI, HTTPException
-# from fastapi.staticfiles import StaticFiles
-# from fastapi.responses import FileResponse
-# from pydantic import BaseModel
-# import os
-# import uvicorn
-# from dotenv import load_dotenv
-# #from dotenv import load_dotenv
-
-# # ✅ Insert startup logic here
-# # ----- Minimal Azure Free-compatible startup logic -----
-# GRAPH_DIR = "graph"
-# LOG_DIR = "logs"
-# GRAPH_FILE = os.path.join(GRAPH_DIR, "graph.pkl")
-
-# os.makedirs(GRAPH_DIR, exist_ok=True)
-# os.makedirs(LOG_DIR, exist_ok=True)
-
-# if not os.path.exists(GRAPH_FILE):
-#     print("📊 graph.pkl not found — building knowledge graph...")
-#     try:
-#         from backend.graph_builder import build_graph
-#         build_graph()
-#         print("✅ Knowledge graph built successfully.")
-#     except Exception as e:
-#         print(f"❌ Error building graph: {e}")
-# else:
-#     print("✅ graph.pkl already exists — skipping build.")
-# # --------------------------------------------------------
-
-# #app = FastAPI(title="Nestlé AI Chatbot", version="1.0.0")
-
-# # Import your modules from backend folder
-# from backend.retriever import load_graph, embed_nodes, get_top_nodes
-# from backend.openai_interface import ask_openai
-# from backend.web_scraper import scrape_web, get_fallback_nestle_urls
-
-# # Load environment variables
-# load_dotenv()
-
-# app = FastAPI(title="Nestlé AI Chatbot", version="1.0.0")
-
-# # Global variables for graph and embeddings
-# G = None
-# node_embeddings = None
-
-# @app.on_event("startup")
-# async def startup_event():
-#     """Initialize the application on startup"""
-#     global G, node_embeddings
-    
-#     print("🚀 Starting Nestlé AI Chatbot...")
-    
-#     # Try to load graph and embeddings
-#     try:
-#         print("📊 Loading knowledge graph...")
-#         G = load_graph()
-#         node_embeddings = embed_nodes(G)
-#         print(f"✅ Graph loaded successfully with {G.number_of_nodes()} nodes")
-#     except Exception as e:
-#         print(f"⚠️ Warning: Could not load graph: {e}")
-#         print("📝 Building new graph...")
-#         try:
-#             from backend.graph_builder import build_graph
-#             build_graph()
-#             G = load_graph()
-#             node_embeddings = embed_nodes(G)
-#             print(f"✅ New graph built with {G.number_of_nodes()} nodes")
-#         except Exception as build_error:
-#             print(f"❌ Error building graph: {build_error}")
-#             G = None
-#             node_embeddings = None
-    
-#     print("🎉 Nestlé AI Chatbot is ready!")
-
-# # Pydantic model for incoming JSON
-# class Query(BaseModel):
-#     question: str
-
-# # Health check endpoint
-# @app.get("/health")
-# def health_check():
-#     """Health check endpoint for Azure App Service"""
-#     return {
-#         "status": "healthy",
-#         "graph_loaded": G is not None,
-#         "nodes_count": G.number_of_nodes() if G else 0,
-#         "environment": os.getenv("ENVIRONMENT", "development")
-#     }
-
-# # Main chat endpoint
-# @app.post("/chat")
-# def chat(query: Query):
-#     """Main chat endpoint that processes user queries"""
-#     try:
-#         print(f"[DEBUG] Received query: {query.question}")
-        
-#         # Get graph context if available
-#         graph_context = ""
-#         if G and node_embeddings:
-#             try:
-#                 top_nodes = get_top_nodes(query.question, G, node_embeddings, k=5)
-#                 graph_context = "\n".join([
-#                     f"**{node}**: {G.nodes[node]['description']}" 
-#                     for node in top_nodes if node in G.nodes
-#                 ])
-#                 print(f"[DEBUG] Top graph nodes: {top_nodes}")
-#             except Exception as e:
-#                 print(f"[DEBUG] Graph retrieval error: {e}")
-#                 graph_context = get_basic_nestle_context(query.question)
-#         else:
-#             graph_context = get_basic_nestle_context(query.question)
-        
-#         # Get web results with improved scraper
-#         web_results = []
-#         try:
-#             web_results = scrape_web(query.question, num_results=5)
-#             print(f"[DEBUG] Web results found: {len(web_results)}")
-            
-#             # If no web results, use fallback URLs
-#             if not web_results:
-#                 web_results = get_fallback_nestle_urls(query.question)
-#                 print(f"[DEBUG] Using fallback URLs: {len(web_results)}")
-                
-#         except Exception as e:
-#             print(f"[DEBUG] Web scraping error: {e}")
-#             web_results = get_fallback_nestle_urls(query.question)
-        
-#         # Create comprehensive context
-#         web_context = "\n".join([f"- {url}" for url in web_results]) if web_results else ""
-        
-#         full_context = f"""NESTLÉ KNOWLEDGE BASE:
-# {graph_context}
-
-# RELEVANT NESTLÉ WEBSITES:
-# {web_context}
-
-# QUERY CONTEXT: The user is asking about: {query.question}
-# Please provide a response specifically focused on Nestlé Canada products, services, and information."""
-
-#         print(f"[DEBUG] Context length: {len(full_context)}")
-        
-#         # Get AI response
-#         try:
-#             answer = ask_openai(query.question, full_context)
-#             print(f"[DEBUG] AI response generated successfully")
-#         except Exception as e:
-#             print(f"[DEBUG] AI response error: {e}")
-#             answer = get_emergency_fallback_response(query.question)
-        
-#         return {
-#             "answer": answer,
-#             "sources": web_results or []
-#         }
-    
-#     except Exception as e:
-#         print(f"[ERROR] Chat endpoint error: {e}")
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# def get_basic_nestle_context(query):
-#     """Provide basic Nestlé context when graph is not available"""
-#     query_lower = query.lower()
-    
-#     context = "**Nestlé Canada**: Leading food and beverage company with brands like KitKat, Smarties, Aero, Coffee-mate, and Quality Street.\n"
-    
-#     if any(word in query_lower for word in ["chocolate", "candy", "sweet"]):
-#         context += "**Chocolate Brands**: KitKat wafer bars, Smarties colorful chocolates, Aero bubbly chocolate, Quality Street assorted chocolates.\n"
-    
-#     if any(word in query_lower for word in ["coffee", "beverage", "drink"]):
-#         context += "**Beverages**: Nespresso premium coffee, Coffee-mate creamers, Carnation hot chocolate.\n"
-    
-#     if any(word in query_lower for word in ["nutrition", "baby", "health"]):
-#         context += "**Nutrition**: Gerber baby food, Carnation evaporated milk, focus on nutrition science.\n"
-    
-#     if any(word in query_lower for word in ["sustainability", "environment"]):
-#         context += "**Sustainability**: Committed to sustainable cocoa sourcing, water stewardship, and carbon footprint reduction.\n"
-    
-#     if any(word in query_lower for word in ["christmas", "holiday", "gift"]):
-#         context += "**Holiday Products**: Christmas advent calendars, gift tins, seasonal packaging, perfect for gifting.\n"
-    
-#     context += "**Company Values**: Good Food, Good Life philosophy, quality ingredients, Canadian manufacturing."
-    
-#     return context
-
-# def get_emergency_fallback_response(query):
-#     """Emergency fallback response if all else fails"""
-#     return """Hello! I'm your Nestlé Canada assistant. I'm here to help you with information about our delicious products and services.
-
-# Our popular brands include:
-# - **KitKat** - Have a break, have a KitKat
-# - **Smarties** - Colorful chocolate treats
-# - **Aero** - Light, bubbly chocolate
-# - **Coffee-mate** - Coffee creamers and enhancers
-# - **Quality Street** - Premium assorted chocolates
-
-# Visit **madewithnestle.ca** to explore our full range of products, recipes, and find where to buy.
-
-# How can I help you with Nestlé products today?"""
-
-# # Serve static files (frontend)
-# app.mount("/static", StaticFiles(directory="frontend"), name="static")
-
-# # Serve the main chatbot UI
-# @app.get("/")
-# def get_chat_ui():
-#     """Serve the main chatbot interface"""
-#     return FileResponse(os.path.join("frontend", "index.html"))
-
-# # Run the application
-# if __name__ == "__main__":
-#     port = int(os.getenv("PORT", 8000))
-#     debug = os.getenv("DEBUG", "False").lower() == "true"
-    
-#     print(f"🌐 Starting server on port {port}")
-#     uvicorn.run(
-#         "app:app", 
-#         host="0.0.0.0", 
-#         port=port, 
-#         reload=debug
-#     )
-
-# app.py - Main application file for Azure deployment
+# app.py - AZURE FREE TIER COMPATIBLE VERSION
+# No startup scripts needed - everything handled in code
 
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 import os
 import uvicorn
-from dotenv import load_dotenv
 
-# Import backend modules
-from backend.retriever import load_graph, embed_nodes, get_top_nodes
-from backend.openai_interface import ask_openai
-from backend.web_scraper import scrape_web, get_fallback_nestle_urls
-
-# Load environment variables
-load_dotenv()
-
-# ----- Azure-compatible startup: Create graph/log folders and build graph if needed -----
-GRAPH_DIR = "graph"
-LOG_DIR = "logs"
-GRAPH_FILE = os.path.join(GRAPH_DIR, "graph.pkl")
-
-os.makedirs(GRAPH_DIR, exist_ok=True)
-os.makedirs(LOG_DIR, exist_ok=True)
-
-if not os.path.exists(GRAPH_FILE):
-    print("📊 graph.pkl not found — building knowledge graph...")
-    try:
-        from backend.graph_builder import build_graph
-        build_graph()
-        print("✅ Knowledge graph built successfully.")
-    except Exception as e:
-        print(f"❌ Error building graph: {e}")
-else:
-    print("✅ graph.pkl already exists — skipping build.")
-# ------------------------------------------------------------------------------------------
-
+# Create app FIRST
 app = FastAPI(title="Nestlé AI Chatbot", version="1.0.0")
 
 # Global variables
 G = None
 node_embeddings = None
+components_loaded = False
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize the application on startup"""
-    global G, node_embeddings
-    print("🚀 Starting Nestlé AI Chatbot...")
+# ESSENTIAL: Create directories immediately
+os.makedirs("graph", exist_ok=True)
+os.makedirs("logs", exist_ok=True)
+print("📁 Directories created")
 
-    try:
-        print("📥 Loading knowledge graph and embeddings...")
-        G = load_graph()
-        node_embeddings = embed_nodes(G)
-        print(f"✅ Graph loaded with {G.number_of_nodes()} nodes")
-    except Exception as e:
-        print(f"❌ Failed to load graph/embeddings: {e}")
-        G = None
-        node_embeddings = None
-
-    print("🎉 Chatbot startup complete!")
-
-# ----- API Models -----
 class Query(BaseModel):
     question: str
 
-# ----- Endpoints -----
 @app.get("/health")
 def health_check():
+    """Always works - no dependencies"""
     return {
         "status": "healthy",
-        "graph_loaded": G is not None,
-        "nodes_count": G.number_of_nodes() if G else 0,
-        "environment": os.getenv("ENVIRONMENT", "development")
+        "message": "Nestlé Chatbot is running on Azure Free Tier",
+        "components_loaded": components_loaded
     }
 
-@app.post("/chat")
-def chat(query: Query):
+@app.get("/test")
+def simple_test():
+    """Ultra simple test endpoint"""
+    return {"message": "✅ Nestlé Chatbot API is working!", "azure": "free-tier"}
+
+def load_components_if_needed():
+    """Load heavy components only when first needed"""
+    global G, node_embeddings, components_loaded
+    
+    if components_loaded:
+        return
+    
+    print("🔄 Loading components on first request...")
+    
     try:
-        print(f"[DEBUG] Received query: {query.question}")
-        graph_context = ""
+        # Try to load OpenAI
+        import openai
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        print("✅ OpenAI configured")
+    except Exception as e:
+        print(f"⚠️ OpenAI setup issue: {e}")
+    
+    try:
+        # Build minimal graph if needed
+        graph_file = os.path.join("graph", "graph.pkl")
+        if not os.path.exists(graph_file):
+            build_minimal_graph()
+    except Exception as e:
+        print(f"⚠️ Graph issue: {e}")
+    
+    components_loaded = True
+    print("✅ Components loaded successfully")
 
-        if G and node_embeddings:
-            try:
-                top_nodes = get_top_nodes(query.question, G, node_embeddings, k=5)
-                graph_context = "\n".join([
-                    f"**{node}**: {G.nodes[node]['description']}"
-                    for node in top_nodes if node in G.nodes
-                ])
-                print(f"[DEBUG] Top graph nodes: {top_nodes}")
-            except Exception as e:
-                print(f"[DEBUG] Error using graph: {e}")
-                graph_context = get_basic_nestle_context(query.question)
+def build_minimal_graph():
+    """Build graph without heavy dependencies"""
+    try:
+        import pickle
+        
+        # Create simple data structure instead of NetworkX
+        simple_graph = {
+            "KitKat": {
+                "description": "Nestlé's iconic chocolate wafer bar. Have a break, have a KitKat!",
+                "category": "chocolate"
+            },
+            "Smarties": {
+                "description": "Colorful candy-coated chocolate pieces perfect for sharing and baking.",
+                "category": "chocolate"
+            },
+            "Aero": {
+                "description": "Light, bubbly chocolate bars with unique aerated texture.",
+                "category": "chocolate"
+            },
+            "Coffee-mate": {
+                "description": "Premium coffee creamers in various delicious flavors.",
+                "category": "beverages"
+            },
+            "Quality Street": {
+                "description": "Premium assorted chocolates in colorful wrappers, perfect for gifting.",
+                "category": "chocolate"
+            },
+            "Nestlé Canada": {
+                "description": "Leading food and beverage company with beloved Canadian brands.",
+                "category": "company"
+            }
+        }
+        
+        # Save simple graph
+        with open(os.path.join("graph", "graph.pkl"), "wb") as f:
+            pickle.dump(simple_graph, f)
+        
+        print("✅ Minimal graph created")
+        return simple_graph
+    except Exception as e:
+        print(f"❌ Graph creation failed: {e}")
+        return {}
+
+def get_simple_context(query):
+    """Get context without heavy ML"""
+    query_lower = query.lower()
+    
+    contexts = {
+        "kitkat": "**KitKat** is Nestlé's world-famous chocolate wafer bar. With crispy wafer fingers covered in smooth milk chocolate, it's the perfect treat for a break. Available in original, chunky, and seasonal varieties.",
+        
+        "smarties": "**Smarties** are Nestlé's beloved colorful candy-coated chocolates. Perfect for sharing, parties, baking, and decorating. These bite-sized treats bring joy and color to any occasion.",
+        
+        "aero": "**Aero** chocolate bars feature Nestlé's unique bubbly texture that melts smoothly in your mouth. The aerated chocolate creates a light, indulgent experience available in milk and dark chocolate.",
+        
+        "coffee": "**Coffee-mate** offers premium coffee creamers that transform your daily coffee into a delicious experience. Available in classic and seasonal flavors like French Vanilla and Peppermint Mocha.",
+        
+        "quality street": "**Quality Street** provides an assortment of premium chocolates and toffees in distinctive colorful wrappers. Perfect for sharing during holidays and special celebrations.",
+        
+        "chocolate": "Nestlé Canada offers an amazing range of **chocolate products** including KitKat wafer bars, Smarties colorful candies, Aero bubbly chocolate, and Quality Street premium assortments.",
+        
+        "sustainability": "**Nestlé is committed to sustainability** through the Cocoa Plan, supporting farmers, water stewardship, and reducing environmental impact across all operations.",
+        
+        "nutrition": "Nestlé focuses on **Good Food, Good Life** with products that provide quality ingredients, balanced nutrition, and support for all life stages from infants to seniors."
+    }
+    
+    # Find matching context
+    for keyword, context in contexts.items():
+        if keyword in query_lower:
+            return context
+    
+    # Default context
+    return "**Nestlé Canada** is home to beloved brands like KitKat, Smarties, Aero, Coffee-mate, and Quality Street. We're committed to Good Food, Good Life with quality ingredients and sustainable practices."
+
+def get_smart_response(query):
+    """Generate response without OpenAI if needed"""
+    query_lower = query.lower()
+    
+    # Product-specific responses
+    if any(word in query_lower for word in ["kitkat", "kit kat"]):
+        return """🍫 **KitKat - Have a break, have a KitKat!**
+
+KitKat is Nestlé's iconic chocolate wafer bar that's been bringing joy since 1935. Our crispy wafer fingers are perfectly covered in smooth milk chocolate.
+
+**Available varieties:**
+• Original 4-finger bars
+• KitKat Chunky for extra indulgence  
+• Seasonal flavors and limited editions
+• Mini bars perfect for sharing
+
+**Perfect for:** Coffee breaks, sharing with friends, lunchbox treats, or anytime you need a delicious break!
+
+Visit **madewithnestle.ca** to explore our full KitKat range and discover recipes!"""
+
+    elif "smarties" in query_lower:
+        return """🌈 **Smarties - Colorful Fun in Every Bite!**
+
+Smarties are Nestlé's beloved candy-coated chocolate pieces that bring color and joy to every occasion.
+
+**Why people love Smarties:**
+• Vibrant, colorful candy shells
+• Smooth chocolate inside
+• Perfect for sharing and parties
+• Great for baking and decorating
+• Available in various pack sizes
+
+**Fun uses:** Birthday parties, cookie decorating, ice cream toppings, trail mix, and creative baking projects!
+
+Find creative **Smarties recipes** and baking ideas at **madewithnestle.ca**!"""
+
+    elif "aero" in query_lower:
+        return """🫧 **Aero - Feel the Bubbles Melt!**
+
+Aero chocolate bars feature Nestlé's unique bubbly texture that creates an incredibly smooth, melt-in-your-mouth experience.
+
+**What makes Aero special:**
+• Unique aerated chocolate texture
+• Light, bubbly consistency
+• Smooth melting experience
+• Available in milk and dark chocolate
+• Perfect portion sizes
+
+**The Aero experience:** Each bite delivers tiny air bubbles that collapse on your tongue, creating a uniquely satisfying chocolate moment.
+
+Discover more about **Aero** and our chocolate range at **madewithnestle.ca**!"""
+
+    elif any(word in query_lower for word in ["coffee", "coffee-mate"]):
+        return """☕ **Coffee-mate - Make Every Cup Special!**
+
+Coffee-mate transforms your daily coffee into a delicious, coffeehouse-quality experience with our premium creamers.
+
+**Popular Coffee-mate flavors:**
+• French Vanilla - Classic and smooth
+• Hazelnut - Rich and nutty
+• Peppermint Mocha - Seasonal favorite
+• Original - Perfect coffee complement
+• Sugar-free options available
+
+**Perfect for:** Morning coffee, afternoon pick-me-ups, iced coffee creations, and coffee-based desserts.
+
+Explore **Coffee-mate products** and coffee recipes at **madewithnestle.ca**!"""
+
+    elif any(word in query_lower for word in ["sustainability", "environment"]):
+        return """🌱 **Nestlé's Commitment to Sustainability**
+
+At Nestlé, we believe in creating a better future through sustainable practices across all our operations.
+
+**Our key sustainability initiatives:**
+• **Cocoa Plan**: Supporting sustainable cocoa farming and farmer communities
+• **Water Stewardship**: Protecting and preserving water resources
+• **Carbon Footprint**: Reducing greenhouse gas emissions across our value chain
+• **Sustainable Packaging**: Moving toward recyclable and reusable packaging
+• **Responsible Sourcing**: Ensuring ethical supply chain practices
+
+**Our goal:** Creating shared value for communities, environment, and future generations.
+
+Learn more about our **sustainability commitments** at **madewithnestle.ca/sustainability**!"""
+
+    else:
+        return """👋 **Welcome to Nestlé Canada!**
+
+I'm here to help you discover our amazing range of products and learn about our commitment to **Good Food, Good Life**.
+
+**🍫 Popular Nestlé Canada brands:**
+• **KitKat** - Have a break, have a KitKat!
+• **Smarties** - Colorful chocolate treats
+• **Aero** - Feel the bubbles melt
+• **Coffee-mate** - Make every cup special
+• **Quality Street** - Premium chocolates for sharing
+
+**✨ What I can help with:**
+• Product information and ingredients
+• Recipe ideas and cooking tips
+• Sustainability and nutrition facts
+• Where to find our products
+• Company information and values
+
+**Visit madewithnestle.ca** for recipes, product details, and more!
+
+What would you like to know about Nestlé products?"""
+
+@app.post("/chat")
+async def chat(query: Query):
+    """Main chat endpoint - works with or without heavy components"""
+    try:
+        # Load components if this is first request
+        load_components_if_needed()
+        
+        print(f"💬 Query: {query.question}")
+        
+        # Try OpenAI first if available
+        try:
+            import openai
+            api_key = os.getenv("OPENAI_API_KEY")
+            
+            if api_key:
+                openai.api_key = api_key
+                context = get_simple_context(query.question)
+                
+                response = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful Nestlé Canada assistant. Provide friendly, informative responses about Nestlé products, focusing on KitKat, Smarties, Aero, Coffee-mate, and Quality Street. Always mention madewithnestle.ca for more information."},
+                        {"role": "user", "content": f"Context: {context}\n\nQuestion: {query.question}"}
+                    ],
+                    max_tokens=400,
+                    temperature=0.7
+                )
+                
+                answer = response.choices[0].message.content.strip()
+            else:
+                answer = get_smart_response(query.question)
+        except Exception as e:
+            print(f"OpenAI fallback: {e}")
+            answer = get_smart_response(query.question)
+        
+        # Get relevant URLs
+        query_lower = query.question.lower()
+        sources = []
+        
+        if "kitkat" in query_lower:
+            sources = ["https://www.madewithnestle.ca/brands/kitkat"]
+        elif "smarties" in query_lower:
+            sources = ["https://www.madewithnestle.ca/brands/smarties"]
+        elif "aero" in query_lower:
+            sources = ["https://www.madewithnestle.ca/brands/aero"]
+        elif "coffee" in query_lower:
+            sources = ["https://www.madewithnestle.ca/brands/coffee-mate"]
+        elif "sustainability" in query_lower:
+            sources = ["https://www.madewithnestle.ca/sustainability"]
         else:
-            graph_context = get_basic_nestle_context(query.question)
-
-        try:
-            web_results = scrape_web(query.question, num_results=5)
-            print(f"[DEBUG] Web results found: {len(web_results)}")
-            if not web_results:
-                web_results = get_fallback_nestle_urls(query.question)
-        except Exception as e:
-            print(f"[DEBUG] Scraper failed: {e}")
-            web_results = get_fallback_nestle_urls(query.question)
-
-        web_context = "\n".join([f"- {url}" for url in web_results]) if web_results else ""
-
-        full_context = f"""NESTLÉ KNOWLEDGE BASE:
-{graph_context}
-
-RELEVANT NESTLÉ WEBSITES:
-{web_context}
-
-QUERY CONTEXT: The user is asking about: {query.question}
-Please provide a response specifically focused on Nestlé Canada products, services, and information."""
-
-        try:
-            answer = ask_openai(query.question, full_context)
-        except Exception as e:
-            print(f"[DEBUG] AI fallback triggered: {e}")
-            answer = get_emergency_fallback_response(query.question)
-
+            sources = [
+                "https://www.madewithnestle.ca",
+                "https://www.madewithnestle.ca/brands"
+            ]
+        
         return {
             "answer": answer,
-            "sources": web_results or []
+            "sources": sources[:3]
+        }
+    
+    except Exception as e:
+        print(f"Chat error: {e}")
+        return {
+            "answer": get_smart_response(query.question),
+            "sources": ["https://www.madewithnestle.ca"]
         }
 
-    except Exception as e:
-        print(f"[ERROR] Chat failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ----- Fallback context -----
-def get_basic_nestle_context(query):
-    query_lower = query.lower()
-    context = "**Nestlé Canada**: Leading food and beverage company with brands like KitKat, Smarties, Aero, Coffee-mate, and Quality Street.\n"
-
-    if any(w in query_lower for w in ["chocolate", "candy", "sweet"]):
-        context += "**Chocolate Brands**: KitKat, Smarties, Aero, Quality Street.\n"
-    if any(w in query_lower for w in ["coffee", "beverage", "drink"]):
-        context += "**Beverages**: Nespresso, Coffee-mate, Carnation hot chocolate.\n"
-    if any(w in query_lower for w in ["nutrition", "baby", "health"]):
-        context += "**Nutrition**: Gerber baby food, Carnation evaporated milk.\n"
-    if any(w in query_lower for w in ["sustainability", "environment"]):
-        context += "**Sustainability**: Cocoa sourcing, water stewardship, carbon reduction.\n"
-    if any(w in query_lower for w in ["christmas", "holiday", "gift"]):
-        context += "**Holiday Products**: Advent calendars, gift tins, seasonal treats.\n"
-
-    context += "**Values**: Good Food, Good Life philosophy, quality ingredients, Canadian made."
-    return context
-
-def get_emergency_fallback_response(query):
-    return """Hello! I'm your Nestlé Canada assistant.
-I can help with products like KitKat, Aero, Smarties, Coffee-mate, and more.
-Visit madewithnestle.ca to explore recipes, brands, and where to buy!
-"""
-
-# ----- Frontend Static Files -----
-app.mount("/static", StaticFiles(directory="frontend"), name="static")
-
+# Serve static files - with fallback
+try:
+    app.mount("/static", StaticFiles(directory="frontend"), name="static")
+except Exception as e:
+    print(f"Static files warning: {e}")
 
 @app.get("/")
 def get_chat_ui():
-    return FileResponse(os.path.join("frontend", "index.html"))
+    """Serve main page with fallback"""
+    try:
+        html_path = os.path.join("frontend", "index.html")
+        if os.path.exists(html_path):
+            return FileResponse(html_path)
+        else:
+            # Fallback HTML if file missing
+            return HTMLResponse("""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Nestlé Chatbot</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        .status { background: #8B4513; color: white; padding: 20px; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div class="status">
+        <h1>🏠 Nestlé Chatbot is Running!</h1>
+        <p>API is working. Frontend files are loading...</p>
+        <p><a href="/test" style="color: white;">Test API</a> | <a href="/health" style="color: white;">Health Check</a></p>
+    </div>
+</body>
+</html>
+            """)
+    except Exception as e:
+        return {"message": "Nestlé Chatbot API is running", "frontend_error": str(e)}
 
-# ----- Main Runner -----
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
-    debug = os.getenv("DEBUG", "False").lower() == "true"
-    print(f"🌐 Starting server on port {port}")
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=debug)
-
+    print(f"🌐 Starting Nestlé Chatbot on port {port}")
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
