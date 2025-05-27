@@ -11,13 +11,3 @@ transformers==4.36.2
 torch==1.13.1
 # Ultra minimal requirements.txt for Azure Free Tier
 # Only essential packages to avoid timeout
-
-#fastapi==0.108.0
-#uvicorn==0.25.0
-#pydantic==2.5.3
-python-dotenv==1.0.0
-requests==2.31.0
-beautifulsoup4==4.12.2
-#openai==1.10.0
-
-# That's it! No heavy ML dependencies that cause timeouts
